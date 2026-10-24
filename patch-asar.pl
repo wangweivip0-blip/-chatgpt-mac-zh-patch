@@ -36,7 +36,7 @@ my $assets=$idx->{files}{webview}{files}{assets}{files} // die "无已知界面�
 my @locales=grep {/^zh-(?:CN|Hans)-.*\.js$/} keys %$assets;
 die "目标应用没有内置简体中文资源，本工具不支持该版本。\n" unless @locales && $idx->{files}{'native-menu-locales'}{files}{'zh-CN.json'};
 my @hits;
-for my $name (sort grep {/^app-initial-.*\.js$/} keys %$assets) {
+for my $name (sort grep {/^(?:app-initial|initialize-app-host-services)-.*\.js$/} keys %$assets) {
  my $entry=$assets->{$name}; die "不支持解包后的界面文件\n" if $entry->{unpacked};
  die "资源过大\n" if $entry->{size}>100_000_000;
  seek($f,$base+$entry->{offset},0) or die "定位资源失败\n";
@@ -64,9 +64,20 @@ die "资源长度发生变化\n" unless length($patched)==length($data);
 my $newhash=sha256_hex($patched);my @newblocks;
 for(my $pos=0;$pos<length($patched);$pos+=$bs){push @newblocks,sha256_hex(substr($patched,$pos,$bs));}
 my %changes=($integrity->{hash}=>$newhash);
-for my $i(0..$#oldblocks){$changes{$oldblocks[$i]}=$newblocks[$i] if $oldblocks[$i] ne $newblocks[$i];}
+for my $i(0..$#oldblocks){
+ next if $oldblocks[$i] eq $newblocks[$i];
+ die "共享摘要的新值冲突，停止。\n" if exists($changes{$oldblocks[$i]}) && $changes{$oldblocks[$i]} ne $newblocks[$i];
+ $changes{$oldblocks[$i]}=$newblocks[$i];
+} 
 my $newheader=$header;
-for my $old(keys %changes){ my $count=()=$newheader=~/\Q$old\E/g;die "校验值在索引中不唯一，停止。\n" unless $count==1;$newheader=~s/\Q$old\E/$changes{$old}/; }
+my @target_digests=($integrity->{hash},@oldblocks);
+for my $old(keys %changes){
+ next if $old eq $changes{$old};
+ my $expected=grep {$_ eq $old} @target_digests;
+ my $count=()=$newheader=~/\Q$old\E/g;
+ die "摘要还被目标文件以外的索引项引用，停止。\n" unless $expected>0 && $count==$expected;
+ $newheader=~s/\Q$old\E/$changes{$old}/g;
+}
 die "索引长度改变\n" unless length($newheader)==length($header);
 my $checked=decode_json($newheader)->{files}{webview}{files}{assets}{files}{$hit->{name}}{integrity};
 die "新校验索引不一致\n" unless $checked->{hash} eq $newhash && encode_json($checked->{blocks}) eq encode_json(\@newblocks);

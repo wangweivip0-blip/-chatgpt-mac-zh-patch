@@ -1,6 +1,9 @@
 #!/bin/zsh
 set -euo pipefail
 cd -- "${0:A:h}"
+log_file="$PWD/中文状态检查-$(date +%Y%m%d-%H%M%S).txt"
+exec > >(/usr/bin/tee "$log_file") 2>&1
+print "检查报告：$log_file"
 result=0
 trap 'result=$?; print ""; read -r "?按回车关闭窗口…"; exit "$result"' EXIT
 source_app="${1:-}"
@@ -13,6 +16,8 @@ fi
 source_app="${source_app:A}"
 identity=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$source_app/Contents/Info.plist")
 [[ "$identity" == com.openai.codex ]] || { print "所选应用不是 com.openai.codex。"; exit 1; }
+print "应用路径：$source_app"
+print "应用版本：$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$source_app/Contents/Info.plist")"
 /usr/bin/perl ./locale-tool.pl --check "$source_app"
 if /usr/bin/perl ./patch-state.pl "$source_app"; then
   /usr/bin/codesign --verify --deep --strict "$source_app"

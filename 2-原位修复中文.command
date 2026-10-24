@@ -50,6 +50,11 @@ else
 fi
 if /usr/bin/perl ./patch-state.pl "$source_app"; then
   /usr/bin/codesign --verify --deep --strict "$source_app"
+  if [[ ! -w "$source_app" || ! -w "${source_app:h}" ]]; then
+    elevate_for_install "$source_app"
+  fi
+  acquire_lock "$source_app"
+  /usr/bin/perl ./patch-state.pl "$source_app"
   run_user_config --apply "$source_app"
   print "ChatGPT 已应用中文修复且签名有效，无需重复修改或再建备份。"
   exit 0
@@ -68,6 +73,12 @@ run_user_config --check "$source_app"
 /usr/bin/perl ./patch-asar.pl --inspect "$source_app"
 version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$source_app/Contents/Info.plist")
 build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$source_app/Contents/Info.plist")
+print "待修复应用：$source_app；版本：$version/$build"
+/usr/bin/codesign --verify --deep --strict "$source_app" || { print "源应用签名校验失败，未修改。请先安装可信官方版本。"; exit 1; }
+required_kb=$(/usr/bin/du -sk "$source_app" | /usr/bin/awk '{print $1}')
+available_kb=$(/bin/df -Pk "$PWD" | /usr/bin/awk 'END {print $4}')
+[[ "$required_kb" == <-> && "$available_kb" == <-> ]] || { print "无法确认备份磁盘空间，未修改。"; exit 1; }
+(( available_kb > required_kb + 524288 )) || { print "备份所在磁盘空间不足；请至少留出应用大小加 512 MB。"; exit 1; }
 backup_dir="$PWD/备份-$(/bin/date +%Y%m%d-%H%M%S)-$$.noindex"
 /bin/mkdir -m 700 "$backup_dir"
 if (( EUID == 0 )); then

@@ -75,6 +75,11 @@ for my $i (0..$#lines) {
  elsif ($l !~ /^\h*#/ && $l =~ /(?:["']desktop["']\s*\.|desktop\s*\.\s*["']localeOverride|\[desktop\.localeOverride\])/ ) { die "语言项采用特殊写法，请手动处理。\n"; }
 }
 die "发现重复的 desktop 段或语言项，请先修复配置。\n" if $section_count>1 || @keys>1;
+if ($mode eq '--check' && @keys) {
+ my $language_line=$lines[$keys[0]];
+ if($language_line =~ /=\h*["']([A-Za-z0-9_-]{1,30})["']/){print "当前语言项：$1\n";}
+ else{print "当前语言项不是简单字符串，未输出其内容。\n";}
+}
 if ($mode eq '--check') { print "检查通过。".(@keys ? "发现已有语言项（未输出其他配置）。" : "尚未找到语言项。")."\n检查不会修改任何文件。\n"; exit; }
 stopped();
 my $after;
