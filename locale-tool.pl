@@ -3,6 +3,9 @@ use strict;
 use warnings;
 use utf8;
 use JSON::PP;
+use FindBin qw($Bin);
+use lib $Bin;
+use LanguageLayout qw(locale_evidence);
 use File::Path qw(make_path);
 use File::Spec;
 use File::Temp qw(tempfile);
@@ -40,10 +43,8 @@ sub inspect_app {
  my @n=unpack('V4',$h); die "ASAR 索引尺寸异常\n" if $n[3]>100_000_000 || $n[1]<8;
  read($f,my $json,$n[3])==$n[3] or die "ASAR 索引不完整\n";
  my $idx=decode_json($json); my $assets=$idx->{files}{webview}{files}{assets}{files}//{};
- my @cn=sort grep {/^zh-(?:CN|Hans)-.*\.js$/} keys %$assets;
- my $menu=$idx->{files}{'native-menu-locales'}{files}{'zh-CN.json'};
- die "缺少中文菜单或界面文件；本工具不能给该版本补齐资源。\n" unless $menu && @cn;
- print "应用：$app\n中文菜单：存在\n中文界面模块：".scalar(@cn)." 份\n配置：$config\n";
+ my $evidence=locale_evidence($idx,$f,8+$n[1]);
+ print "应用：$app\n中文菜单：存在\n$evidence\n配置：$config\n";
  close $f;
 }
 die "不支持符号链接形式的配置文件，请手动检查后操作。\n" if -l $config;

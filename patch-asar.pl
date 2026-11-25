@@ -8,6 +8,8 @@ use File::Basename qw(basename);
 use Encode qw(encode_utf8);
 use Cwd qw(abs_path);
 use FindBin qw($Bin);
+use lib $Bin;
+use LanguageLayout qw(language_modules locale_evidence read_checked lookup_entry);
 binmode STDOUT, ':encoding(UTF-8)';
 binmode STDERR, ':encoding(UTF-8)';
 my ($mode,$app,$backup)=@ARGV;
@@ -33,15 +35,12 @@ if ($mode eq '--patch') {
 }
 my $idx=decode_json($header); my $base=8+$n[1];
 my $assets=$idx->{files}{webview}{files}{assets}{files} // die "无已知界面资源目录\n";
-my @locales=grep {/^zh-(?:CN|Hans)-.*\.js$/} keys %$assets;
-die "目标应用没有内置简体中文资源，本工具不支持该版本。\n" unless @locales && $idx->{files}{'native-menu-locales'}{files}{'zh-CN.json'};
+print locale_evidence($idx,$f,$base)."\n";
 my @hits;
-for my $name (sort grep {/^(?:app-initial|initialize-app-host-services)-.*\.js$/} keys %$assets) {
- my $entry=$assets->{$name}; die "不支持解包后的界面文件\n" if $entry->{unpacked};
- die "资源过大\n" if $entry->{size}>100_000_000;
- seek($f,$base+$entry->{offset},0) or die "定位资源失败\n";
- read($f,my $data,$entry->{size})==$entry->{size} or die "读取资源失败\n";
- while ($data =~ /([A-Za-z_\$][A-Za-z0-9_\$]*\?\.get\(`enable_i18n`,!1\))/g) {
+for my $module (language_modules($idx,$f,$base)) {
+ my $name=$module->{name};my $entry=$module->{entry};
+ my $data=read_checked($f,$base,$entry,"webview/assets/$name");
+ while ($data =~ /([A-Za-z_\$][A-Za-z0-9_\$]*\?\.get\((["`])enable_i18n\2,!1\))/g) {
   my $at=$-[0]; my $old=$1; my $context=substr($data,$at>700?$at-700:0,1500);
   die "找到开关但上下文不匹配，停止。\n" unless $context =~ /localeOverride/ && $context =~ /locale_source/;
   push @hits,{name=>$name,entry=>$entry,data=>$data,at=>$at,old=>$old};
@@ -79,7 +78,7 @@ for my $old(keys %changes){
  $newheader=~s/\Q$old\E/$changes{$old}/g;
 }
 die "索引长度改变\n" unless length($newheader)==length($header);
-my $checked=decode_json($newheader)->{files}{webview}{files}{assets}{files}{$hit->{name}}{integrity};
+my $checked=lookup_entry(decode_json($newheader),"webview/assets/$hit->{name}")->{integrity};
 die "新校验索引不一致\n" unless $checked->{hash} eq $newhash && encode_json($checked->{blocks}) eq encode_json(\@newblocks);
 # 同步 Electron 框架中的完整性字典摘要，保留完整性验证开启。
 my $plist="$app/Contents/Info.plist";
